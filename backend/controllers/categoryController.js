@@ -1,83 +1,83 @@
-const Category = require("../models/CategoryModel")
+import Category from "../models/categoryModel.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
 
-const getCategories = async (req, res, next) => {
-    try {
-        const categories = await Category.find({}).sort({name: "asc"}).orFail()
-        res.json(categories)
-    } catch(error) {
-        next(error)
+const createCategory = asyncHandler(async (req, res) => {
+  try {
+    const { name } = req.body;
+
+    if (!name) {
+      return res.json({ error: "Name is required" });
     }
-}
 
-const newCategory = async (req, res, next) => {
-    try {
-        const {category} = req.body
-        if(!category) {
-            res.status(400).send("Category input is required")
-        }
-        const categoryExists = await Category.findOne({name: category})
-        if(categoryExists) {
-            res.status(400).send("Category already exists")
-        } else {
-            const categoryCreated = await Category.create({
-                name: category
-            })
-            res.status(201).send({categoryCreated: categoryCreated})
-        }
-    } catch (err) {
-        next(err)
+    const existingCategory = await Category.findOne({ name });
+
+    if (existingCategory) {
+      return res.json({ error: "Already exists" });
     }
-}
 
-const deleteCategory = async (req, res, next) => {
-    // return res.send(req.params.category)
-    try {
-        if(req.params.category !== "Choose category") {
-            const categoryExists = await Category.findOne({
-                name: decodeURIComponent(req.params.category)
-            }).orFail()
-            await categoryExists.remove()
-            res.json({categoryDeleted: true})
-        }
-    } catch (err) {
-        next(err)
+    const category = await new Category({ name }).save();
+    res.json(category);
+  } catch (error) {
+    console.log(error);
+    return res.status(400).json(error);
+  }
+});
+
+const updateCategory = asyncHandler(async (req, res) => {
+  try {
+    const { name } = req.body;
+    const { categoryId } = req.params;
+
+    const category = await Category.findOne({ _id: categoryId });
+
+    if (!category) {
+      return res.status(404).json({ error: "Category not found" });
     }
-}
 
-const saveAttr = async (req, res, next) => {
-    const {key, val, categoryChoosen} = req.body
-    if(!key || !val || !categoryChoosen) {
-        return res.status(400).send("All inputs are required")
-    }
-    try {
-        const category = categoryChoosen.split("/")[0]
-        const categoryExists = await Category.findOne({name: category}).orFail()
-        if(categoryExists.attrs.length > 0) {
-            // if key exists in the database then add a value to the key
-            var keyDoesNotExistsInDatabase = true
-            categoryExists.attrs.map((item, idx) => {
-                if(item.key === key) {
-                    keyDoesNotExistsInDatabase = false
-                    var copyAttributeValues = [...categoryExists.attrs[idx].value]
-                    copyAttributeValues.push(val)
-                    var newAttributeValues = [...new Set(copyAttributeValues)] // Set ensures unique values
-                    categoryExists.attrs[idx].value = newAttributeValues
-                }
-            })
+    category.name = name;
 
-            if(keyDoesNotExistsInDatabase) {
-                categoryExists.attrs.push({key: key, value: [val]})
-            }
-        } else {
-            // push to the array
-            categoryExists.attrs.push({key: key, value: [val]})
-        }
-        await categoryExists.save()
-        let cat = await Category.find({}).sort({name: "asc"})
-        return res.status(201).json({categoriesUpdated: cat})
-    } catch(err) {
-        next(err)
-    }
-}
+    const updatedCategory = await category.save();
+    res.json(updatedCategory);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
 
-module.exports = {getCategories, newCategory, deleteCategory, saveAttr}
+const removeCategory = asyncHandler(async (req, res) => {
+  try {
+    const removed = await Category.findByIdAndRemove(req.params.categoryId);
+    res.json(removed);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+const listCategory = asyncHandler(async (req, res) => {
+  try {
+    const all = await Category.find({});
+    res.json(all);
+  } catch (error) {
+    console.log(error);
+    return res.status(400).json(error.message);
+  }
+});
+
+const readCategory = asyncHandler(async (req, res) => {
+  try {
+    const category = await Category.findOne({ _id: req.params.id });
+    res.json(category);
+  } catch (error) {
+    console.log(error);
+    return res.status(400).json(error.message);
+  }
+});
+
+export {
+  createCategory,
+  updateCategory,
+  removeCategory,
+  listCategory,
+  readCategory,
+};

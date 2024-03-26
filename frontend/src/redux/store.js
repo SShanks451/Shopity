@@ -1,39 +1,31 @@
-import { createStore, combineReducers, applyMiddleware } from "redux";
-import { composeWithDevTools } from "redux-devtools-extension";
-import thunk from "redux-thunk";
+import { configureStore } from "@reduxjs/toolkit";
+import { setupListeners } from "@reduxjs/toolkit/query/react";
+import { apiSlice } from "./api/apiSlice";
+import authReducer from "./features/auth/authSlice";
+import favoritesReducer from "../redux/features/favorites/favoriteSlice";
+import cartSliceReducer from "../redux/features/cart/cartSlice";
+import shopReducer from "../redux/features/shop/shopSlice";
+import { getFavoritesFromLocalStorage } from "../Utils/localStorage";
 
-import { cartReducer } from "./reducers/cartReducers";
-import { userRegisterLoginReducer } from './reducers/userReducers';
-import { getCategoriesReducer } from "./reducers/categoryReducers";
-import { adminChatReducer } from "./reducers/adminChatReducers";
+const initialFavorites = getFavoritesFromLocalStorage() || [];
 
-const reducer = combineReducers({
-    cart: cartReducer,
-    userRegisterLogin: userRegisterLoginReducer,
-    getCategories: getCategoriesReducer, 
-    adminChat: adminChatReducer,
-})
+const store = configureStore({
+  reducer: {
+    [apiSlice.reducerPath]: apiSlice.reducer,
+    auth: authReducer,
+    favorites: favoritesReducer,
+    cart: cartSliceReducer,
+    shop: shopReducer,
+  },
 
-const cartItemsInLocalStorage = localStorage.getItem("cart") ? JSON.parse(localStorage.getItem("cart")) : [];
+  preloadedState: {
+    favorites: initialFavorites,
+  },
 
-const userInfoInLocalStorage = localStorage.getItem("userInfo")
-? JSON.parse(localStorage.getItem("userInfo"))
-: sessionStorage.getItem("userInfo")
-? JSON.parse(sessionStorage.getItem("userInfo"))
-: {}
+  middleware: (getDefaultMiddleware) =>
+    getDefaultMiddleware().concat(apiSlice.middleware),
+  devTools: true,
+});
 
-const INITIAL_STATE = {
-    cart: {
-        cartItems: cartItemsInLocalStorage,
-        itemsCount: cartItemsInLocalStorage ? cartItemsInLocalStorage.reduce((quantity, item) => Number(item.quantity) + quantity, 0) : 0,
-        cartSubtotal: cartItemsInLocalStorage ? cartItemsInLocalStorage.reduce((price, item) => price + item.price * item.quantity, 0) : 0
-    },
-    userRegisterLogin: { userInfo: userInfoInLocalStorage }
-}
-
-const middleware = [thunk];
-const store = createStore(reducer, INITIAL_STATE, composeWithDevTools(applyMiddleware(...middleware)))
-
-
-
+setupListeners(store.dispatch);
 export default store;

@@ -1,22 +1,38 @@
-const express = require('express')
-const router = express.Router()
-const { verifyIsLoggedIn, verifyIsAdmin } = require("../middleware/verifyAuthToken");
-const {getUsers, registerUser, loginUser, updateUserProfile, getUserProfile, writeReview, getUser, updateUser, deleteUser} = require("../controllers/userController")
+import express from "express";
+import {
+  createUser,
+  loginUser,
+  logoutCurrentUser,
+  getAllUsers,
+  getCurrentUserProfile,
+  updateCurrentUserProfile,
+  deleteUserById,
+  getUserById,
+  updateUserById,
+} from "../controllers/userController.js";
 
-router.post("/register", registerUser)
-router.post("/login", loginUser)
+import { authenticate, authorizeAdmin } from "../middlewares/authMiddleware.js";
 
-// user logged in routes:
-router.use(verifyIsLoggedIn);
-router.put("/profile", updateUserProfile);
-router.get('/profile/:id', getUserProfile)
-router.post('/review/:productId', writeReview)
+const router = express.Router();
 
-// admin routes:
-router.use(verifyIsAdmin);
-router.get("/", getUsers)
-router.get("/:id", getUser);
-router.put('/:id', updateUser)
-router.delete('/:id', deleteUser)
+router
+  .route("/")
+  .post(createUser)
+  .get(authenticate, authorizeAdmin, getAllUsers);
 
-module.exports = router
+router.post("/auth", loginUser);
+router.post("/logout", logoutCurrentUser);
+
+router
+  .route("/profile")
+  .get(authenticate, getCurrentUserProfile)
+  .put(authenticate, updateCurrentUserProfile);
+
+// ADMIN ROUTES 👇
+router
+  .route("/:id")
+  .delete(authenticate, authorizeAdmin, deleteUserById)
+  .get(authenticate, authorizeAdmin, getUserById)
+  .put(authenticate, authorizeAdmin, updateUserById);
+
+export default router;

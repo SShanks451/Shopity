@@ -1,19 +1,33 @@
-const express = require('express')
-const router = express.Router()
-const { verifyIsLoggedIn, verifyIsAdmin } = require('../middleware/verifyAuthToken')
-const {getUserOrders, getOrder, createOrder, updateOrderToPaid, updateOrderToDelivered, getOrders, getOrderForAnalysis} = require("../controllers/orderController")
+import express from "express";
+const router = express.Router();
 
-// user routes
-router.use(verifyIsLoggedIn)
-router.get("/", getUserOrders)
-router.get("/user/:id", getOrder);
-router.post("/", createOrder);
-router.put("/paid/:id", updateOrderToPaid);
+import {
+  createOrder,
+  getAllOrders,
+  getUserOrders,
+  countTotalOrders,
+  calculateTotalSales,
+  calcualteTotalSalesByDate,
+  findOrderById,
+  markOrderAsPaid,
+  markOrderAsDelivered,
+} from "../controllers/orderController.js";
 
-// admin routes
-router.use(verifyIsAdmin)
-router.put("/delivered/:id", updateOrderToDelivered);
-router.get("/admin", getOrders);
-router.get("/analysis/:date", getOrderForAnalysis);
+import { authenticate, authorizeAdmin } from "../middlewares/authMiddleware.js";
 
-module.exports = router
+router
+  .route("/")
+  .post(authenticate, createOrder)
+  .get(authenticate, authorizeAdmin, getAllOrders);
+
+router.route("/mine").get(authenticate, getUserOrders);
+router.route("/total-orders").get(countTotalOrders);
+router.route("/total-sales").get(calculateTotalSales);
+router.route("/total-sales-by-date").get(calcualteTotalSalesByDate);
+router.route("/:id").get(authenticate, findOrderById);
+router.route("/:id/pay").put(authenticate, markOrderAsPaid);
+router
+  .route("/:id/deliver")
+  .put(authenticate, authorizeAdmin, markOrderAsDelivered);
+
+export default router;

@@ -1,24 +1,40 @@
-const express = require('express')
-const router = express.Router()
-const {getProducts, getProductById, getBestsellers, adminGetProducts, adminDeleteProduct, adminCreateProduct, adminUpdateProduct, adminUpload, adminDeleteProductImage} = require("../controllers/productController")
+import express from "express";
+import formidable from "express-formidable";
+const router = express.Router();
 
-const { verifyIsLoggedIn, verifyIsAdmin } = require("../middleware/verifyAuthToken")
+// controllers
+import {
+  addProduct,
+  updateProductDetails,
+  removeProduct,
+  fetchProducts,
+  fetchProductById,
+  fetchAllProducts,
+  addProductReview,
+  fetchTopProducts,
+  fetchNewProducts,
+  filterProducts,
+} from "../controllers/productController.js";
+import { authenticate, authorizeAdmin } from "../middlewares/authMiddleware.js";
+import checkId from "../middlewares/checkId.js";
 
-router.get("/category/:categoryName/search/:searchQuery", getProducts)
-router.get("/category/:categoryName", getProducts)
-router.get("/search/:searchQuery", getProducts)
-router.get("/", getProducts)
-router.get("/bestsellers", getBestsellers)
-router.get("/get-one/:id", getProductById)
+router
+  .route("/")
+  .get(fetchProducts)
+  .post(authenticate, authorizeAdmin, formidable(), addProduct);
 
-// admin routes:
-router.use(verifyIsLoggedIn)
-router.use(verifyIsAdmin)
-router.get("/admin", adminGetProducts)
-router.delete("/admin/:id", adminDeleteProduct)
-router.delete("/admin/image/:imagePath/:productId", adminDeleteProductImage)
-router.put("/admin/:id", adminUpdateProduct)
-router.post("/admin/upload", adminUpload)
-router.post("/admin", adminCreateProduct)
+router.route("/allproducts").get(fetchAllProducts);
+router.route("/:id/reviews").post(authenticate, checkId, addProductReview);
 
-module.exports = router
+router.get("/top", fetchTopProducts);
+router.get("/new", fetchNewProducts);
+
+router
+  .route("/:id")
+  .get(fetchProductById)
+  .put(authenticate, authorizeAdmin, formidable(), updateProductDetails)
+  .delete(authenticate, authorizeAdmin, removeProduct);
+
+router.route("/filtered-products").post(filterProducts);
+
+export default router;

@@ -1,251 +1,180 @@
-const User = require("../models/UserModel");
-const Review = require("../models/ReviewModel");
-const Product = require("../models/ProductModel");
-const { hashPassword, comparePasswords } = require("../utils/hashPassword");
-const generateAuthToken = require("../utils/generateAuthToken");
+import User from "../models/userModel.js";
+import asyncHandler from "../middlewares/asyncHandler.js";
+import bcrypt from "bcryptjs";
+import createToken from "../utils/createToken.js";
 
-const getUsers = async (req, res, next) => {
-  try {
-    const users = await User.find({}).select("-password");
-    return res.json(users);
-  } catch (err) {
-    next(err);
+const createUser = asyncHandler(async (req, res) => {
+  const { username, email, password } = req.body;
+
+  if (!username || !email || !password) {
+    throw new Error("Please fill all the inputs.");
   }
-};
 
-const registerUser = async (req, res, next) => {
+  const userExists = await User.findOne({ email });
+  if (userExists) res.status(400).send("User already exists");
+
+  const salt = await bcrypt.genSalt(10);
+  const hashedPassword = await bcrypt.hash(password, salt);
+  const newUser = new User({ username, email, password: hashedPassword });
+
   try {
-    const { name, lastName, email, password } = req.body;
-    if (!(name && lastName && email && password)) {
-      return res.status(400).send("All inputs are required");
-    }
+    await newUser.save();
+    createToken(res, newUser._id);
 
-    const userExists = await User.findOne({ email });
-    if (userExists) {
-      return res.status(400).send("user exists");
-    } else {
-      const hashedPassword = hashPassword(password);
-      const user = await User.create({
-        name,
-        lastName,
-        email: email.toLowerCase(),
-        password: hashedPassword,
+    res.status(201).json({
+      _id: newUser._id,
+      username: newUser.username,
+      email: newUser.email,
+      isAdmin: newUser.isAdmin,
+    });
+  } catch (error) {
+    res.status(400);
+    throw new Error("Invalid user data");
+  }
+});
+
+const loginUser = asyncHandler(async (req, res) => {
+  const { email, password } = req.body;
+
+  console.log(email);
+  console.log(password);
+
+  const existingUser = await User.findOne({ email });
+
+  if (existingUser) {
+    const isPasswordValid = await bcrypt.compare(
+      password,
+      existingUser.password
+    );
+
+    if (isPasswordValid) {
+      createToken(res, existingUser._id);
+
+      res.status(201).json({
+        _id: existingUser._id,
+        username: existingUser.username,
+        email: existingUser.email,
+        isAdmin: existingUser.isAdmin,
       });
-      res
-        .cookie(
-          "access_token",
-          generateAuthToken(
-            user._id,
-            user.name,
-            user.lastName,
-            user.email,
-            user.isAdmin
-          ),
-          {
-            httpOnly: true,
-            secure: process.env.NODE_ENV === "production",
-            sameSite: "strict",
-          }
-        )
-        .status(201)
-        .json({
-          success: "User created",
-          userCreated: {
-            _id: user._id,
-            name: user.name,
-            lastName: user.lastName,
-            email: user.email,
-            isAdmin: user.isAdmin,
-          },
-        });
+      return;
     }
-  } catch (err) {
-    next(err);
   }
-};
+});
 
-const loginUser = async (req, res, next) => {
-  try {
-    const { email, password, doNotLogout } = req.body;
-    if (!(email && password)) {
-      return res.status(400).send("All inputs are required");
-    }
+const logoutCurrentUser = asyncHandler(async (req, res) => {
+  res.cookie("jwt", "", {
+    httyOnly: true,
+    expires: new Date(0),
+  });
 
-    const user = await User.findOne({ email }).orFail();
-    if (user && comparePasswords(password, user.password)) {
-      let cookieParams = {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-      };
+  res.status(200).json({ message: "Logged out successfully" });
+});
 
-      if (doNotLogout) {
-        cookieParams = { ...cookieParams, maxAge: 1000 * 60 * 60 * 24 * 7 }; // 1000=1ms
-      }
+const getAllUsers = asyncHandler(async (req, res) => {
+  const users = await User.find({});
+  res.json(users);
+});
 
-      return res
-        .cookie(
-          "access_token",
-          generateAuthToken(
-            user._id,
-            user.name,
-            user.lastName,
-            user.email,
-            user.isAdmin
-          ),
-          cookieParams
-        )
-        .json({
-          success: "user logged in",
-          userLoggedIn: {
-            _id: user._id,
-            name: user.name,
-            lastName: user.lastName,
-            email: user.email,
-            isAdmin: user.isAdmin,
-            doNotLogout,
-          },
-        });
-    } else {
-      return res.status(401).send("wrong credentials");
-    }
-  } catch (err) {
-    next(err);
+const getCurrentUserProfile = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+
+  if (user) {
+    res.json({
+      _id: user._id,
+      username: user.username,
+      email: user.email,
+    });
+  } else {
+    res.status(404);
+    throw new Error("User not found.");
   }
-};
+});
 
-const updateUserProfile = async (req, res, next) => {
-  try {
-    const user = await User.findById(req.user._id).orFail();
-    user.name = req.body.name || user.name;
-    user.lastName = req.body.lastName || user.lastName;
-    user.phoneNumber = req.body.phoneNumber;
-    user.address = req.body.address;
-    user.country = req.body.country;
-    user.zipCode = req.body.zipCode;
-    user.city = req.body.city;
-    user.state = req.body.state;
-    if (req.body.password !== user.password) {
-      user.password = hashPassword(req.body.password);
+const updateCurrentUserProfile = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.user._id);
+
+  if (user) {
+    user.username = req.body.username || user.username;
+    user.email = req.body.email || user.email;
+
+    if (req.body.password) {
+      const salt = await bcrypt.genSalt(10);
+      const hashedPassword = await bcrypt.hash(req.body.password, salt);
+      user.password = hashedPassword;
     }
-    await user.save();
+
+    const updatedUser = await user.save();
 
     res.json({
-      success: "user updated",
-      userUpdated: {
-        _id: user._id,
-        name: user.name,
-        lastName: user.lastName,
-        email: user.email,
-        isAdmin: user.isAdmin,
-      },
+      _id: updatedUser._id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      isAdmin: updatedUser.isAdmin,
     });
-  } catch (err) {
-    next(err);
+  } else {
+    res.status(404);
+    throw new Error("User not found");
   }
+});
+
+const deleteUserById = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+
+  if (user) {
+    if (user.isAdmin) {
+      res.status(400);
+      throw new Error("Cannot delete admin user");
+    }
+
+    await User.deleteOne({ _id: user._id });
+    res.json({ message: "User removed" });
+  } else {
+    res.status(404);
+    throw new Error("User not found.");
+  }
+});
+
+const getUserById = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id).select("-password");
+
+  if (user) {
+    res.json(user);
+  } else {
+    res.status(404);
+    throw new Error("User not found");
+  }
+});
+
+const updateUserById = asyncHandler(async (req, res) => {
+  const user = await User.findById(req.params.id);
+
+  if (user) {
+    user.username = req.body.username || user.username;
+    user.email = req.body.email || user.email;
+    user.isAdmin = Boolean(req.body.isAdmin);
+
+    const updatedUser = await user.save();
+
+    res.json({
+      _id: updatedUser._id,
+      username: updatedUser.username,
+      email: updatedUser.email,
+      isAdmin: updatedUser.isAdmin,
+    });
+  } else {
+    res.status(404);
+    throw new Error("User not found");
+  }
+});
+
+export {
+  createUser,
+  loginUser,
+  logoutCurrentUser,
+  getAllUsers,
+  getCurrentUserProfile,
+  updateCurrentUserProfile,
+  deleteUserById,
+  getUserById,
+  updateUserById,
 };
-
-const getUserProfile = async (req, res, next) => {
-    try {
-        const user = await User.findById(req.params.id).orFail();
-        return res.send(user);
-    } catch(err) {
-        next(err)
-    }
-}
-
-const writeReview = async (req, res, next) => {
-    try {
-
-        const session = await Review.startSession();
-
-        // get comment, rating from request.body:
-        const { comment, rating } = req.body;
-        // validate request:
-        if (!(comment && rating)) {
-            return res.status(400).send("All inputs are required");
-        }
-
-        // create review id manually because it is needed also for saving in Product collection
-        const ObjectId = require("mongodb").ObjectId;
-        let reviewId = ObjectId();
-
-        session.startTransaction();
-        await Review.create([
-            {
-                _id: reviewId,
-                comment: comment,
-                rating: Number(rating),
-                user: { _id: req.user._id, name: req.user.name + " " + req.user.lastName },
-            }
-        ],{ session: session })
-
-        const product = await Product.findById(req.params.productId).populate("reviews").session(session);
-        
-        const alreadyReviewed = product.reviews.find((r) => r.user._id.toString() === req.user._id.toString());
-        if (alreadyReviewed) {
-            await session.abortTransaction();
-            session.endSession();
-            return res.status(400).send("product already reviewed");
-        }
-
-        let prc = [...product.reviews];
-        prc.push({ rating: rating });
-        product.reviews.push(reviewId);
-        if (product.reviews.length === 1) {
-            product.rating = Number(rating);
-            product.reviewsNumber = 1;
-        } else {
-            product.reviewsNumber = product.reviews.length;
-            let ratingCalc = prc.map((item) => Number(item.rating)).reduce((sum, item) => sum + item, 0) / product.reviews.length;
-            product.rating = Math.round(ratingCalc)
-        }
-        await product.save();
-
-        await session.commitTransaction();
-        session.endSession();
-        res.send('review created')
-    } catch (err) {
-        await session.abortTransaction();
-        next(err)   
-    }
-}
-
-const getUser = async (req, res, next) => {
-    try {
-        const user = await User.findById(req.params.id).select("name lastName email isAdmin").orFail();
-        return res.send(user);
-    } catch (err) {
-       next(err); 
-    }
-}
-
-const updateUser = async (req, res, next) => {
-    try {
-       const user = await User.findById(req.params.id).orFail(); 
-
-        user.name = req.body.name || user.name;
-        user.lastName = req.body.lastName || user.lastName;
-        user.email = req.body.email || user.email;
-        user.isAdmin = req.body.isAdmin
-
-        await user.save();
-
-        res.send("user updated");
-
-    } catch (err) {
-       next(err); 
-    }
-}
-
-const deleteUser = async (req, res, next) => {
-    try {
-       const user = await User.findById(req.params.id).orFail();
-       await user.remove(); 
-       res.send("user removed");
-    } catch (err) {
-        next(err);
-    }
-}
-
-module.exports = { getUsers, registerUser, loginUser, updateUserProfile, getUserProfile, writeReview, getUser, updateUser, deleteUser };

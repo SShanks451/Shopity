@@ -1,11 +1,13 @@
-const mongoose = require("mongoose");
+import mongoose from "mongoose";
 
-const categorySchema = mongoose.Schema({
-  name: { type: String, required: true, unique: true },
-  description: { type: String, default: "default category description" },
-  image: { type: String, default: "/images/tablets-category.png" },
-  attrs: [{ key: { type: String }, value: [{ type: String }] }],
+const categorySchema = new mongoose.Schema({
+  name: {
+    type: String,
+    trim: true,
+    required: true,
+    maxLength: 32,
+    unique: true,
+  },
 });
-categorySchema.index({description: 1})
-const Category = mongoose.model("Category", categorySchema);
-module.exports = Category;
+
+export default mongoose.model("Category", categorySchema);
